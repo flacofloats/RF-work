@@ -1,0 +1,158 @@
+#add packages 
+library("plyr", lib.loc="~/R/win-library/3.0")
+library("flightcallr", lib.loc="~/R/win-library/3.0")
+
+#set working directory 
+setwd("E:/Acoustic Data/R files/Whistle Reference selections")
+
+#Merge all selection tables
+file_list<-list.files()
+w.ref.2014 <- ldply(file_list, read.table, header=TRUE, sep="\t")
+
+#Subset only Spectrogram 1 view
+sw.ref.2014<-subset(w.ref.2014,View=="Spectrogram 1")
+
+#Train Random Forest variables
+  #OBB error 5.3%
+  WR.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+ PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014)
+  
+  #OBB error 3.31%
+  WR1.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+Delta.Time..s.+ PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE)
+WR1.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+Delta.Time..s.+ PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE,ntree=50)
+WR1.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+Delta.Time..s.+ PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE,ntree=40)
+WR1.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+Delta.Time..s.+ PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE,ntree=90)
+
+  #With slope 
+  WR2.RF <- randomForest(Site.ID~ Delta.Freq..Hz.+Delta.Time..s.+ PFC.Max.Slope..Hz.ms. +Max.Entropy..bits. + PFC.Min.Freq..Hz.+ PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014)
+
+#all variables 3.31% OOB
+all.RF <- randomForest(Site.ID~ Delta.Time..s. + PFC.Max.Slope..Hz.ms.+ Q1.Freq..Hz. +  Q3.Freq..Hz. +  Agg.Entropy..bits. + Avg.Entropy..bits. + BW.90...Hz. + Center.Freq..Hz. +  Delta.Freq..Hz.  + Freq.5...Hz. + Freq.95...Hz. + IQR.BW..Hz.+ Max.Entropy..bits. + Max.Freq..Hz.  + Min.Entropy..bits. + Peak.Freq..Hz.  + PFC.Max.Freq..Hz.  + PFC.Min.Freq..Hz. + PFC.Num.Inf.Pts ,data=sw.ref.2014,importance=TRUE,mtry=8)
+
+importance(all.RF,type=1)
+all.RF
+varImpPlot(all.RF,type=1)
+
+
+#adjusted varibles 1.99% oob
+ad.RF <- randomForest(Site.ID~Delta.Freq..Hz.+ Delta.Time..s.+  PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE,importance=TRUE,mtry=4)
+
+#Varible importance
+varImpPlot(ad.RF,type=1)
+
+#Check for independent variables
+cor(sw.ref.2014[,c("Delta.Freq..Hz.","Delta.Time..s.","PFC.Max.Freq..Hz.",
+                   "PFC.Num.Inf.Pts")], use="complete")
+#Remove na
+no.na2014<-sw.ref.2014[,colSums(is.na(sw.ref.2014)) != nrow(sw.ref.2014)]
+
+#Subset variables
+subad<-subset(no.na2014,select=c(Delta.Freq..Hz., Delta.Time..s., PFC.Max.Freq..Hz., PFC.Num.Inf.Pts,Site.ID))
+suball<-subset(no.na2014,select=c(Site.ID,Delta.Time..s. , PFC.Max.Slope..Hz.ms., Q1.Freq..Hz. ,  Q3.Freq..Hz. ,  Agg.Entropy..bits. , Avg.Entropy..bits. , BW.90...Hz. , Center.Freq..Hz. ,  Delta.Freq..Hz.  , Freq.5...Hz. , Freq.95...Hz. , IQR.BW..Hz., Max.Entropy..bits. , Max.Freq..Hz. , Min.Entropy..bits. ,Peak.Freq..Hz., PFC.Max.Freq..Hz., PFC.Min.Freq..Hz., PFC.Num.Inf.Pts)
+
+
+#TuneRF
+BestMtry<-tuneRF(x=subad[,-5],y=no.na2014$Site.ID,ntreeTRY = 500, stepFactor = 2, improve = 0.1, plot = TRUE)
+BestMtry2<-tuneRF(x=suball[,-1],y=no.na2014$Site.ID,ntreeTRY = 500, stepFactor = 2, improve = 0.05, plot = TRUE,doBest=TRUE)
+
+#Delta.Freq..Hz. Delta.Time..s. PFC.Max.Freq..Hz.
+#Delta.Freq..Hz.         1.0000000     -0.3916211         0.8721039
+#Delta.Time..s.         -0.3916211      1.0000000        -0.3799283
+#PFC.Max.Freq..Hz.       0.8721039     -0.3799283         1.0000000
+#PFC.Num.Inf.Pts        -0.2768658      0.8368516        -0.2379590
+#PFC.Num.Inf.Pts
+#Delta.Freq..Hz.        -0.2768658
+#Delta.Time..s.          0.8368516
+#PFC.Max.Freq..Hz.      -0.2379590
+#PFC.Num.Inf.Pts         1.0000000
+
+#Delta time and PFC.NumInfPts positve correlation, non independent re-evaulaute
+
+#Without Delta time %5.3
+ag.RF <- randomForest(Site.ID~Delta.Freq..Hz.+ Agg.Entropy..bits. + PFC.Max.Freq..Hz.+ PFC.Num.Inf.Pts, data=sw.ref.2014,proximity=TRUE,importance=TRUE)
+
+ag.RF
+
+#Without PFC.Num.Inf.Pts 4.64%
+agP.RF <- randomForest(Site.ID~Delta.Freq..Hz.+ Agg.Entropy..bits. + PFC.Max.Freq..Hz.+ Delta.Time..s., data=sw.ref.2014,proximity=TRUE,importance=TRUE)
+
+agP.RF
+
+
+#print
+WR.RF
+WR1.RF
+WR2.RF
+all.RF
+ad.RF
+#plot 
+plot(WR.RF)
+plot(ad.RF)
+
+#plot with legend
+layout(matrix(c(1,2),nrow=1),
+       width=c(4,1)) 
+par(mar=c(5,4,4,0)) #No margin on the right side
+plot(ad.RF, log="y")
+par(mar=c(5,0,4,2)) #No margin on the left side
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("top", colnames(ad.RF$err.rate),col=1:4,cex=0.8,fill=1:4)
+
+
+
+
+
+MDSplot(ad.RF)
+
+#importance
+importance(WR1.RF,type=1)
+importance(WR1.RF)
+importance(ad.RF,type=2)
+
+
+#enter prediction data
+
+  #Set Working Directory
+  setwd("E:/Acoustic Data/Comparisons/Whistles/Selections 2014")
+
+  #load prediction data
+  file_list<-list.files()
+  w2014 <- ldply(file_list, read.table, header=TRUE, sep="\t")
+
+  #Subset only Spectrogram 1 view
+  sw2014<-subset(w2014,View=="Spectrogram 1")
+
+
+
+#Predict
+PWR.RF<-predict(WR.RF,sw2014)
+PWR1.RF<-predict(WR1.RF,sw2014)
+Pall.RF<-predict(all.RF,sw2014)
+Pad.RF<-predict(ad.RF,sw2014)
+
+#print
+PWR.RF
+PWR1.RF
+Pad.RF
+#Add results
+Rsw2014<-cbind(sw2014,PWR.RF)
+Rsw1_2014<-cbind(Rsw2014,PWR1.RF)
+Rsw2_2014<-cbind(Rsw2014,Pall.RF)
+Rsw3_2014<-cbind(Rsw2014,Pad.RF)
+#or
+Rsw2014<-cbind(sw2014,Pad.RF)
+
+#Varible importance plot
+varImpPlot(WR.RF)
+varImpPlot(ad.RF)
+
+#save results as txt
+write.table(Rsw2014, "Rsw2014.txt",sep="\t") 
+
+#save results as csv
+write.csv(sw.ref.2014, "w2014.csv")
+
+write.csv(Rsw2014, "T1_RF2014.csv")
+
+
+#predict values 
+PWR.RF<-predict(WR.RF,sw2014,proximity=TRUE)
